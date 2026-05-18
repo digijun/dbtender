@@ -1,0 +1,70 @@
+{
+  "name": "dbtender",
+  "version": "0.1.0",
+  "description": "Local-first database environment manager — snapshot, branch, and restore before migrations",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "dbtender": "./dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run lint && npm run build"
+  },
+  "keywords": [
+    "postgres",
+    "database",
+    "migrations",
+    "snapshot",
+    "pglite",
+    "developer-tools"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/dbtender"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/dbtender/issues"
+  },
+  "homepage": "https://github.com/yourusername/dbtender#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.0",
+    "@electric-sql/pglite-tools": "^0.3.4",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "dockerode": "^4.0.2",
+    "enquirer": "^2.4.1",
+    "ink": "^4.4.1",
+    "ora": "^8.1.0",
+    "react": "^18.3.1",
+    "table": "^6.8.2"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.29",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.14",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

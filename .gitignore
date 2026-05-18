@@ -1,0 +1,13 @@
+node_modules/
+dist/
+
+# dbenv local state — snapshots and branches stay on your machine
+.dbenv/snapshots/
+.dbenv/branches/
+
+# Keep the config so teammates don't have to run dbenv init
+!.dbenv/dbenv.json
+
+*.log
+.DS_Store
+Thumbs.db

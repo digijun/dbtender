@@ -1,0 +1,72 @@
+name: Migration check
+
+on:
+  pull_request:
+    paths:
+      - 'prisma/migrations/**'
+      - 'drizzle/**'
+      - 'migrations/**'
+
+jobs:
+  migrate:
+    name: Validate migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm install -g dbenv
+
+      - name: Configure dbenv
+        run: |
+          mkdir -p .dbenv
+          CONTAINER=$(docker ps --filter ancestor=postgres:16-alpine --format '{{.Names}}' | head -1)
+          echo "{\"version\":1,\"adapter\":{\"adapter\":\"docker\",\"containerName\":\"$CONTAINER\"}}" > .dbenv/dbenv.json
+
+      - name: Snapshot baseline
+        run: dbenv snapshot save --name ci-baseline --json
+
+      - name: Create migration branch
+        id: branch
+        run: |
+          RESULT=$(dbenv branch create "pr-${{ github.run_id }}" --json)
+          echo "url=$(echo $RESULT | jq -r '.connectionString')" >> $GITHUB_OUTPUT
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ steps.branch.outputs.url }}
+        run: npx prisma migrate deploy   # swap for your ORM
+
+      - name: Run tests
+        env:
+          DATABASE_URL: ${{ steps.branch.outputs.url }}
+        run: npm test
+
+      - name: Schema diff
+        if: always()
+        run: dbenv diff ci-baseline current --raw >> $GITHUB_STEP_SUMMARY 2>&1 || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          dbenv branch delete "pr-${{ github.run_id }}" --json || true
+          dbenv snapshot delete ci-baseline --json || true
