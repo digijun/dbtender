@@ -34,21 +34,21 @@ jobs:
           cache: 'npm'
 
       - run: npm ci
-      - run: npm install -g dbenv
+      - run: npm install -g dbtender
 
-      - name: Configure dbenv
+      - name: Configure dbtender
         run: |
-          mkdir -p .dbenv
+          mkdir -p .dbtender
           CONTAINER=$(docker ps --filter ancestor=postgres:16-alpine --format '{{.Names}}' | head -1)
-          echo "{\"version\":1,\"adapter\":{\"adapter\":\"docker\",\"containerName\":\"$CONTAINER\"}}" > .dbenv/dbenv.json
+          echo "{\"version\":1,\"adapter\":{\"adapter\":\"docker\",\"containerName\":\"$CONTAINER\",\"database\":\"appdb\"}}" > .dbtender/dbtender.json
 
       - name: Snapshot baseline
-        run: dbenv snapshot save --name ci-baseline --json
+        run: dbtender snapshot save --name ci-baseline --json
 
       - name: Create migration branch
         id: branch
         run: |
-          RESULT=$(dbenv branch create "pr-${{ github.run_id }}" --json)
+          RESULT=$(dbtender branch create "pr-${{ github.run_id }}" --json)
           echo "url=$(echo $RESULT | jq -r '.connectionString')" >> $GITHUB_OUTPUT
 
       - name: Run migrations
@@ -63,10 +63,10 @@ jobs:
 
       - name: Schema diff
         if: always()
-        run: dbenv diff ci-baseline current --raw >> $GITHUB_STEP_SUMMARY 2>&1 || true
+        run: dbtender diff ci-baseline current --raw >> $GITHUB_STEP_SUMMARY 2>&1 || true
 
       - name: Cleanup
         if: always()
         run: |
-          dbenv branch delete "pr-${{ github.run_id }}" --json || true
-          dbenv snapshot delete ci-baseline --json || true
+          dbtender branch delete "pr-${{ github.run_id }}" --json || true
+          dbtender snapshot delete ci-baseline --json || true
