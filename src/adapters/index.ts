@@ -9,6 +9,7 @@ import type { IAdapter } from "../lib/types.js"
 import { readConfig } from "../lib/config.js"
 import { DockerAdapter } from "./docker.js"
 import { PGliteAdapter } from "./pglite.js"
+import { LocalAdapter } from "./local.js"
 
 export function resolveAdapter(): IAdapter {
   const config = readConfig()
@@ -32,6 +33,15 @@ export function resolveAdapter(): IAdapter {
 
     case "pglite":
       return new PGliteAdapter({ dataDir: config.adapter.pgliteDir })
+
+    case "local":
+      return new LocalAdapter({
+        host: config.adapter.host,
+        port: config.adapter.port,
+        user: config.adapter.user,
+        password: config.adapter.password,
+        database: config.adapter.database,
+      })
 
     default: {
       const a = config.adapter as { adapter: string }

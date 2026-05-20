@@ -23,7 +23,7 @@ export interface Branch {
 }
 
 export interface AdapterInfo {
-  type: "docker" | "pglite"
+  type: "docker" | "pglite" | "local"
   version: string
   connectionString: string
   dataPath?: string

@@ -47,7 +47,7 @@ program
     chalk.bold("dbtender") + " — local-first database environment manager\n\n" +
     "  Snapshot, branch, and restore your dev database before migrations.\n" +
     "  Git-aware: DB state follows your git branch automatically.\n" +
-    "  Works with Docker Postgres and PGlite. ORM-agnostic.\n\n" +
+    "  Works with Docker Postgres, native Postgres, and PGlite. ORM-agnostic.\n\n" +
     "  Quick start:\n" +
     "    dbtender init\n" +
     "    dbtender git-hooks install\n" +

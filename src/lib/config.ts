@@ -10,7 +10,7 @@ import fs from "node:fs"
 
 // ── Config shapes ─────────────────────────────────────────────────────────────
 
-export type AdapterType = "docker" | "pglite"
+export type AdapterType = "docker" | "pglite" | "local"
 
 export interface DockerAdapterConfig {
   adapter: "docker"
@@ -26,7 +26,16 @@ export interface PGliteAdapterConfig {
   pgliteDir: string
 }
 
-export type AdapterConfig = DockerAdapterConfig | PGliteAdapterConfig
+export interface LocalAdapterConfig {
+  adapter: "local"
+  host?: string
+  port?: number
+  user?: string
+  password?: string
+  database?: string
+}
+
+export type AdapterConfig = DockerAdapterConfig | PGliteAdapterConfig | LocalAdapterConfig
 
 export interface ProjectConfig {
   version: 1

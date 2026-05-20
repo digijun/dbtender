@@ -13,6 +13,7 @@ import enquirer from "enquirer"
 import { writeConfig, projectDbEnvDir } from "../lib/config.js"
 import { DockerAdapter } from "../adapters/docker.js"
 import { PGliteAdapter } from "../adapters/pglite.js"
+import { LocalAdapter } from "../adapters/local.js"
 import { currentGitBranch } from "../lib/git.js"
 
 const { prompt } = enquirer as unknown as {
@@ -67,11 +68,14 @@ export function registerInit(program: Command): void {
         message: "Which type of database?",
         choices: [
           { name: "docker",  message: "Docker Postgres container" },
-          { name: "pglite",  message: "PGlite  (embedded, local WASM)" },
+          { name: "local",   message: "Local Postgres     (native install — Homebrew, Postgres.app, etc.)" },
+          { name: "pglite",  message: "PGlite             (embedded WASM Postgres)" },
         ],
       })
 
-      let adapterConfig: { adapter: "docker"; containerName: string; database?: string } | { adapter: "pglite"; pgliteDir: string }
+      let adapterConfig: { adapter: "docker"; containerName: string; database?: string }
+                       | { adapter: "local"; host?: string; port?: number; user?: string; password?: string; database?: string }
+                       | { adapter: "pglite"; pgliteDir: string }
 
       if (adapter === "docker") {
         const containers = detectPostgresContainers()
@@ -144,6 +148,50 @@ export function registerInit(program: Command): void {
         }
 
         adapterConfig = { adapter: "docker", containerName, database }
+
+      } else if (adapter === "local") {
+        const { host } = await prompt<{ host: string }>({
+          type: "input",
+          name: "host",
+          message: "Postgres host?",
+          initial: "localhost",
+        })
+        const { port } = await prompt<{ port: string }>({
+          type: "input",
+          name: "port",
+          message: "Port?",
+          initial: "5432",
+        })
+        const { user } = await prompt<{ user: string }>({
+          type: "input",
+          name: "user",
+          message: "User?",
+          initial: process.env.USER ?? "postgres",
+        })
+        const { password } = await prompt<{ password: string }>({
+          type: "password",
+          name: "password",
+          message: "Password?",
+        })
+        const { database } = await prompt<{ database: string }>({
+          type: "input",
+          name: "database",
+          message: "Database name?",
+          initial: "postgres",
+        })
+
+        const spinner = ora("Connecting…").start()
+        try {
+          const a = new LocalAdapter({ host, port: Number(port), user, password, database })
+          await a.ping()
+          const info = await a.info()
+          spinner.succeed(`Connected — Postgres ${info.version}  ${chalk.dim(`(${database})`)}`)
+        } catch (err) {
+          spinner.fail(`Cannot connect: ${(err as Error).message}`)
+          process.exit(1)
+        }
+
+        adapterConfig = { adapter: "local", host, port: Number(port), user, password, database }
 
       } else {
         const { pgliteDir } = await prompt<{ pgliteDir: string }>({

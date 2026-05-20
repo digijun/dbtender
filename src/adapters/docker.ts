@@ -87,27 +87,92 @@ export class DockerAdapter implements IAdapter {
     throw new Error(`No free port found in range ${from}–${from + 99}`)
   }
 
-  /** Dump the target database inside the container, copy the file out. */
+  /** Dump the target database inside the container, copy the file out.
+   *  Uses --clean --if-exists so the dump contains DROP IF EXISTS for each object.
+   *  The restore process handles full database recreation separately, avoiding
+   *  FK / constraint dependency errors. */
   private dumpToFile(containerName: string, destFile: string): void {
     const tmp = `/tmp/dbtender-dump-${Date.now()}.sql`
     const r = spawnSync("docker", [
       "exec", "-u", "postgres", containerName,
-      "pg_dump", "-U", this.user, "--clean", "--if-exists", "-d", this.database, "-f", tmp,
+      "pg_dump", "-U", this.user, "--clean", "--if-exists", "--no-owner", "--no-acl", "-d", this.database, "-f", tmp,
     ], { encoding: "utf8" })
     if (r.status !== 0) throw new Error(`pg_dump failed: ${r.stderr}`)
     execSync(`docker cp ${containerName}:${tmp} "${destFile}"`)
     spawnSync("docker", ["exec", containerName, "rm", tmp])
   }
 
-  /** Copy a dump file into the container and restore it. */
+  /** Copy a dump file into the container and restore it.
+   *
+   *  Restore strategy: DROP + CREATE the target database from scratch (via
+   *  the 'postgres' maintenance db), then restore into the fresh database.
+   *  This avoids FK/constraint dependency ordering issues that arise when
+   *  trying to drop individual objects from a populated database.
+   *
+   *  Handles both old-format dumps (DDL + data only) and dumps that were
+   *  created with --create (which have DROP DATABASE / CREATE DATABASE /
+   *  \connect at the top). */
   private restoreFromFile(containerName: string, srcFile: string): void {
     const tmp = `/tmp/dbtender-restore-${Date.now()}.sql`
-    execSync(`docker cp "${srcFile}" ${containerName}:${tmp}`)
+    const escapedDb = this.database.replace(/'/g, "''")
+
+    // Read the dump and strip any database-level DROP/CREATE DATABASE +
+    // \connect preamble so we handle DB recreation ourselves. This makes
+    // the restore work identically for both old and --create format dumps.
+    // We leave SET / SELECT pg_catalog statements intact — they set up the
+    // session state for correct restore (e.g. search_path).
+    let sql = fs.readFileSync(srcFile, "utf8")
+    sql = sql
+      // Strip any DROP DATABASE (with optional IF EXISTS)
+      .replace(/^\s*DROP\s+DATABASE\s+(?:IF\s+EXISTS\s+)?\S+;\s*\n/i, "")
+      // Strip any CREATE DATABASE statement
+      .replace(/^\s*CREATE\s+DATABASE\s+\S+[^;]*;\s*\n/i, "")
+      // Strip any \connect command
+      .replace(/^\s*\\connect\s+\S+\s*\n/i, "")
+
+    // Terminate connections to the target database so it can be dropped
+    const killConnections = `
+      SELECT pg_terminate_backend(pid)
+      FROM pg_stat_activity
+      WHERE datname = '${escapedDb}' AND pid <> pg_backend_pid()
+    `.replace(/\n/g, " ").trim()
+    try {
+      spawnSync("docker", [
+        "exec", "-u", "postgres", containerName,
+        "psql", "-U", this.user, "-d", "postgres", "-c", killConnections,
+      ], { encoding: "utf8", timeout: 10000 })
+    } catch { /* connections may already be dead */ }
+
+    // Drop and recreate the database from scratch — clean slate, no dependency issues.
+    // Must use separate psql calls because DROP DATABASE cannot run in a transaction block,
+    // and psql -c wraps everything in a single implicit transaction.
+    const dropResult = spawnSync("docker", [
+      "exec", "-u", "postgres", containerName,
+      "psql", "-v", "ON_ERROR_STOP=1", "-U", this.user, "-d", "postgres",
+      "-c", `DROP DATABASE IF EXISTS "${escapedDb}";`,
+    ], { encoding: "utf8" })
+    if (dropResult.status !== 0) {
+      throw new Error(`Failed to drop database "${this.database}": ${dropResult.stderr}`)
+    }
+
+    const createResult = spawnSync("docker", [
+      "exec", "-u", "postgres", containerName,
+      "psql", "-v", "ON_ERROR_STOP=1", "-U", this.user, "-d", "postgres",
+      "-c", `CREATE DATABASE "${escapedDb}";`,
+    ], { encoding: "utf8" })
+    if (createResult.status !== 0) {
+      throw new Error(`Failed to create database "${this.database}": ${createResult.stderr}`)
+    }
+
+    // Write the stripped SQL, copy into container, restore into the fresh DB
+    fs.writeFileSync(tmp, sql)
+    execSync(`docker cp "${tmp}" ${containerName}:${tmp}`)
     const r = spawnSync("docker", [
       "exec", "-u", "postgres", containerName,
-      "psql", "-U", this.user, "-d", this.database, "-f", tmp,
+      "psql", "-v", "ON_ERROR_STOP=1", "-U", this.user, "-d", this.database, "-f", tmp,
     ], { encoding: "utf8" })
     spawnSync("docker", ["exec", containerName, "rm", tmp])
+    try { fs.unlinkSync(tmp) } catch {}
     if (r.status !== 0) throw new Error(`psql restore failed: ${r.stderr}`)
   }
 
